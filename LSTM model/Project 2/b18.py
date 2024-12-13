@@ -158,3 +158,98 @@ X_test_pca = pca.transform(X_test_scaled)
 # Number of features after PCA
 features_pca = X_train_pca.shape[1]
 
+look_back = 10  # Adjust look_back based on data patterns and experiment
+
+def create_sequences(data, look_back):
+    sequences = [data[i:i + look_back] for i in range(len(data) - look_back)]
+    return np.array(sequences)
+
+# Create sequences
+X_train_sequences = create_sequences(X_train_pca, look_back)
+X_test_sequences = create_sequences(X_test_pca, look_back)
+
+# Create target sequences
+Y_train_sequences = create_sequences(Y_train_scaled, look_back)
+Y_test_sequences = create_sequences(Y_test_scaled, look_back)
+
+# Adjust target sequences to match input sequences (consider multi-step forecasting)
+Y_train_sequences = Y_train_sequences[:, -1, 0]  # Last value in the sequence
+Y_test_sequences = Y_test_sequences[:, -1, 0]   # Last value in the sequence
+
+###############
+
+import numpy as np
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout, GRU, Bidirectional, Input
+from tensorflow.keras.callbacks import ModelCheckpoint
+from sklearn.metrics import mean_squared_error, r2_score
+import matplotlib.pyplot as plt
+
+# Example data (replace with actual data)
+look_back = 10  # Number of previous time steps
+features_pca = 5  # Number of features after PCA transformation
+X_train_sequences = np.random.rand(100, look_back, features_pca)  # 100 samples, look_back time steps, features_pca features
+Y_train_sequences = np.random.rand(100, 1)  # 100 target values
+X_test_sequences = np.random.rand(20, look_back, features_pca)  # 20 test samples
+Y_test_sequences = np.random.rand(20, 1)  # 20 test targets
+
+# ModelCheckpoint callback
+checkpoint4_path = "model4_weights.keras"
+
+checkpoint_callback4 = ModelCheckpoint(
+    filepath=checkpoint4_path,
+    monitor='val_loss',  # or 'val_accuracy', depending on what you want to monitor
+    save_best_only=True,  # Save only the best model weights
+    mode='min',  # 'min' for loss (lower is better), 'max' for accuracy (higher is better)
+    verbose=1  # Verbosity mode
+)
+
+# Build the BiLSTM model
+model_bilstm = Sequential()
+model_bilstm.add(Input(shape=(look_back, features_pca)))  # Explicitly define input shape
+model_bilstm.add(Bidirectional(LSTM(units=50, return_sequences=True)))
+model_bilstm.add(LSTM(units=25, return_sequences=False))
+model_bilstm.add(Dense(1, activation='linear'))
+model_bilstm.compile(optimizer='adam', loss='mean_squared_error')
+
+# Train the model
+history = model_bilstm.fit(X_train_sequences, Y_train_sequences,
+                           epochs=50,
+                           validation_split=0.2,
+                           callbacks=[checkpoint_callback4]  # Include the callback here
+)
+
+# Load the best weights
+model_bilstm.load_weights(checkpoint4_path)
+
+# Predict on training and test data
+Y_train_pred = model_bilstm.predict(X_train_sequences)
+Y_test_pred = model_bilstm.predict(X_test_sequences)
+
+# Inverse transform predictions (if applicable)
+# Y_train_inv = scaler_Y.inverse_transform(Y_train_sequences.reshape(-1, 1))
+# Y_train_pred_inv = scaler_Y.inverse_transform(Y_train_pred)
+# Y_test_inv = scaler_Y.inverse_transform(Y_test_sequences.reshape(-1, 1))
+# Y_test_pred_inv = scaler_Y.inverse_transform(Y_test_pred)
+
+# Calculate metrics
+mse_train = mean_squared_error(Y_train_sequences, Y_train_pred)
+r2_train = r2_score(Y_train_sequences, Y_train_pred)
+mse_test = mean_squared_error(Y_test_sequences, Y_test_pred)
+r2_test = r2_score(Y_test_sequences, Y_test_pred)
+
+# Print the results
+print(f"Training Mean Squared Error: {mse_train}")
+print(f"Training R² Score: {r2_train}")
+print(f"Test Mean Squared Error: {mse_test}")
+print(f"Test R² Score: {r2_test}")
+
+# Plot training and validation loss
+plt.figure(figsize=(12, 6))
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.title('Training and Validation Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+plt.show()
